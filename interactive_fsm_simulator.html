@@ -1,0 +1,769 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>JFLAP Interactive FSM Simulator</title>
+    <!-- Tailwind CSS for modern responsive styling -->
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'sans-serif'],
+                        mono: ['JetBrains Mono', 'monospace'],
+                    },
+                    colors: {
+                        slate: {
+                            850: '#111827',
+                            900: '#0f172a',
+                            950: '#020617',
+                        }
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        .state-circle {
+            transition: all 0.3s cubic-bezier(0.4, 0, 0.2, 1);
+        }
+        .state-active {
+            fill: #3b82f6 !important;
+            stroke: #60a5fa !important;
+            stroke-width: 4px;
+            filter: drop-shadow(0 0 12px rgba(59, 130, 246, 0.8));
+        }
+        .state-active text {
+            fill: #ffffff !important;
+            font-weight: bold;
+        }
+        .state-final {
+            stroke-dasharray: 0;
+        }
+        .transition-line {
+            transition: all 0.3s ease;
+        }
+        .transition-active {
+            stroke: #3b82f6 !important;
+            stroke-width: 3.5px !important;
+            filter: drop-shadow(0 0 6px rgba(59, 130, 246, 0.6));
+        }
+        .transition-label-active {
+            fill: #60a5fa !important;
+            font-weight: bold;
+            font-size: 13px !important;
+        }
+        /* Pulse animation for active simulation state */
+        @keyframes pulse-ring {
+            0% { transform: scale(0.95); opacity: 0.8; }
+            50% { transform: scale(1.15); opacity: 0.4; }
+            100% { transform: scale(0.95); opacity: 0.8; }
+        }
+        .pulse-target {
+            animation: pulse-ring 1.8s infinite ease-in-out;
+            transform-origin: center;
+        }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-100 font-sans min-h-screen flex flex-col">
+
+    <!-- Header Navigation -->
+    <header class="border-b border-slate-800 bg-slate-900/80 backdrop-blur-md sticky top-0 z-50">
+        <div class="max-w-7xl mx-auto px-4 py-3 flex flex-col sm:flex-row items-center justify-between gap-4">
+            <div class="flex items-center space-x-3">
+                <div class="p-2 bg-blue-600/20 text-blue-400 rounded-lg border border-blue-500/30">
+                    <svg class="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 3v2m6-2v2M9 19v2m6-2v2M5 9H3m2 6H3m18-6h-2m2 6h-2M7 19h10a2 2 0 002-2V7a2 2 0 00-2-2H7a2 2 0 00-2 2v10a2 2 0 002 2zM9 9h6v6H9V9z"></path></svg>
+                </div>
+                <div>
+                    <h1 class="font-bold text-lg text-white leading-tight">JFLAP Automata Simulator</h1>
+                    <p class="text-xs text-slate-400">Formal Systems & State Machine Visualizer</p>
+                </div>
+            </div>
+
+            <!-- FSM Mode Switcher -->
+            <div class="flex bg-slate-950 p-1 rounded-xl border border-slate-800">
+                <button id="btn-hospital" onclick="switchFSM('hospital')" class="px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 bg-blue-600 text-white shadow-lg shadow-blue-500/20">
+                    🏥 Smart Hospital Triage
+                </button>
+                <button id="btn-ecommerce" onclick="switchFSM('ecommerce')" class="px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 text-slate-400 hover:text-white">
+                    📦 Cross-Border E-Commerce
+                </button>
+            </div>
+        </div>
+    </header>
+
+    <!-- Main Workspace Container -->
+    <main class="flex-1 max-w-7xl w-full mx-auto p-4 md:p-6 grid grid-cols-1 lg:grid-cols-12 gap-6">
+
+        <!-- Left Column: Canvas & Direct Control (8 cols) -->
+        <div class="lg:col-span-8 flex flex-col gap-6">
+
+            <!-- FSM Canvas Card -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-6 flex flex-col shadow-xl relative overflow-hidden">
+                <div class="flex items-center justify-between pb-4 mb-2 border-b border-slate-800">
+                    <div>
+                        <h2 id="fsm-title" class="text-base font-semibold text-white flex items-center gap-2">
+                            <span>Smart Hospital Patient Triage FSM</span>
+                        </h2>
+                        <p id="fsm-subtitle" class="text-xs text-slate-400">9 States (q0 to q8) | Initial: q0 | Final: q7 (Discharge), q8 (ICU)</p>
+                    </div>
+                    <span id="verdict-badge" class="px-3 py-1 rounded-full text-xs font-mono font-semibold bg-slate-800 text-slate-400 border border-slate-700">
+                        READY
+                    </span>
+                </div>
+
+                <!-- SVG Canvas Container -->
+                <div class="relative w-full h-[380px] sm:h-[460px] bg-slate-950/60 rounded-xl border border-slate-800/80 flex items-center justify-center overflow-hidden">
+                    <svg id="fsm-svg" class="w-full h-full" viewBox="0 0 950 480" preserveAspectRatio="xMidYMid meet">
+                        <defs>
+                            <!-- Marker Arrowhead -->
+                            <marker id="arrow" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="6" markerHeight="6" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#64748b" />
+                            </marker>
+                            <marker id="arrow-active" viewBox="0 0 10 10" refX="28" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+                                <path d="M 0 0 L 10 5 L 0 10 z" fill="#3b82f6" />
+                            </marker>
+                        </defs>
+                        <!-- Dynamic SVG Content generated by JS -->
+                    </svg>
+                </div>
+
+                <!-- Available Transition Action Triggers for Current State -->
+                <div class="mt-4 pt-4 border-t border-slate-800/80">
+                    <div class="text-xs font-medium text-slate-400 mb-2 flex items-center justify-between">
+                        <span>Available Input Triggers from Current State (<span id="current-state-id" class="font-mono text-blue-400 font-bold">q0</span>):</span>
+                        <span class="text-[10px] text-slate-500">Click a button to manually advance</span>
+                    </div>
+                    <div id="action-triggers" class="flex flex-wrap gap-2">
+                        <!-- Dynamic trigger buttons generated here -->
+                    </div>
+                </div>
+            </div>
+
+            <!-- Execution Control Bar -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-4 md:p-5 flex flex-col gap-4 shadow-xl">
+                <div class="flex flex-col sm:flex-row items-center justify-between gap-4">
+                    <!-- Step Controllers -->
+                    <div class="flex items-center space-x-2 w-full sm:w-auto">
+                        <button onclick="stepForward()" class="flex-1 sm:flex-initial px-4 py-2 bg-blue-600 hover:bg-blue-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 5l7 7-7 7M5 5l7 7-7 7"></path></svg>
+                            Step Forward
+                        </button>
+                        <button id="btn-play" onclick="toggleAutoPlay()" class="flex-1 sm:flex-initial px-4 py-2 bg-emerald-600 hover:bg-emerald-500 text-white rounded-xl text-xs font-semibold flex items-center justify-center gap-1.5 transition">
+                            <svg id="play-icon" class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+                            <span id="play-text">Auto Play</span>
+                        </button>
+                        <button onclick="resetSimulation()" class="px-3 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 rounded-xl text-xs font-semibold transition">
+                            Reset
+                        </button>
+                    </div>
+
+                    <!-- Speed Slider -->
+                    <div class="flex items-center space-x-3 w-full sm:w-auto bg-slate-950 px-3 py-1.5 rounded-xl border border-slate-800">
+                        <span class="text-xs text-slate-400 font-mono">Speed:</span>
+                        <input id="speed-range" type="range" min="300" max="2000" step="100" value="1000" class="w-24 accent-blue-500 cursor-pointer">
+                        <span id="speed-label" class="text-xs font-mono text-slate-300 w-12">1.0s</span>
+                    </div>
+                </div>
+
+                <!-- Custom Trace Input Field -->
+                <div class="flex flex-col sm:flex-row gap-2 pt-2 border-t border-slate-800/60">
+                    <input id="custom-trace-input" type="text" placeholder="e.g. check_in, stable_vitals, order_tests, results_ready..." 
+                        class="flex-1 bg-slate-950 border border-slate-800 rounded-xl px-4 py-2 text-xs font-mono text-blue-300 focus:outline-none focus:border-blue-500/50 transition placeholder-slate-600">
+                    <button onclick="loadCustomTrace()" class="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-200 text-xs font-semibold rounded-xl transition">
+                        Load Custom Trace
+                    </button>
+                </div>
+            </div>
+
+        </div>
+
+        <!-- Right Column: Presets, Status & Execution Log (4 cols) -->
+        <div class="lg:col-span-4 flex flex-col gap-6">
+
+            <!-- Preset Scenarios -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 shadow-xl">
+                <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 mb-3 flex items-center gap-2">
+                    <svg class="w-4 h-4 text-blue-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"></path></svg>
+                    Preset Execution Paths
+                </h3>
+                <div id="preset-buttons" class="flex flex-col gap-2">
+                    <!-- Preset buttons injected dynamically based on active FSM -->
+                </div>
+            </div>
+
+            <!-- Execution Status & Step History Log -->
+            <div class="bg-slate-900 border border-slate-800 rounded-2xl p-5 flex-1 flex flex-col shadow-xl min-h-[300px]">
+                <div class="flex items-center justify-between pb-3 border-b border-slate-800">
+                    <h3 class="text-xs font-bold uppercase tracking-wider text-slate-400 flex items-center gap-2">
+                        <svg class="w-4 h-4 text-emerald-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z"></path></svg>
+                        Execution Step Log
+                    </h3>
+                    <span id="log-count" class="text-[10px] font-mono text-slate-500">0 steps</span>
+                </div>
+
+                <!-- Step Trace History List -->
+                <div id="step-log-container" class="flex-1 overflow-y-auto my-3 pr-1 space-y-2 font-mono text-xs max-h-[260px]">
+                    <div class="text-slate-600 text-center py-8 italic text-xs">Ready. Load a preset or click Step Forward to begin execution.</div>
+                </div>
+
+                <!-- Current Machine Status Box -->
+                <div class="mt-auto pt-3 border-t border-slate-800/80 bg-slate-950/60 -mx-5 -mb-5 p-4 rounded-b-2xl">
+                    <div class="text-[11px] text-slate-400 flex justify-between mb-1">
+                        <span>Current State Label:</span>
+                        <span id="current-state-label" class="font-semibold text-blue-400">q0: Patient Arrival</span>
+                    </div>
+                    <div class="text-[11px] text-slate-400 flex justify-between">
+                        <span>Terminal State Reached:</span>
+                        <span id="is-terminal-text" class="font-semibold text-slate-500">No</span>
+                    </div>
+                </div>
+            </div>
+
+        </div>
+
+    </main>
+
+    <!-- Collapsible Formal Specification Section -->
+    <section class="max-w-7xl w-full mx-auto px-4 md:px-6 mb-8">
+        <details class="bg-slate-900 border border-slate-800 rounded-2xl shadow-xl group">
+            <summary class="p-4 md:p-5 cursor-pointer font-bold text-xs uppercase tracking-wider text-slate-300 flex items-center justify-between select-none">
+                <span class="flex items-center gap-2">
+                    <svg class="w-4 h-4 text-purple-400" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M12 6.253v13m0-13C10.832 5.477 9.246 5 7.5 5S4.168 5.477 3 6.253v13C4.168 18.477 5.754 18 7.5 18s3.332.477 4.5 1.253m0-13C13.168 5.477 14.754 5 16.5 5c1.747 0 3.332.477 4.5 1.253v13C19.832 18.477 18.247 18 16.5 18c-1.746 0-3.332.477-4.5 1.253"></path></svg>
+                    Formal 5-Tuple Mathematical Specifications & Transition Tables
+                </span>
+                <svg class="w-4 h-4 text-slate-500 transition-transform group-open:rotate-180" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M19 9l-7 7-7-7"></path></svg>
+            </summary>
+            <div id="formal-spec-content" class="p-5 border-t border-slate-800 text-xs text-slate-300 font-mono space-y-4">
+                <!-- Injected via JavaScript -->
+            </div>
+        </details>
+    </section>
+
+    <script>
+        /* FSM Definitions */
+        const FSM_DATA = {
+            hospital: {
+                title: "Smart Hospital Patient Triage FSM",
+                subtitle: "9 States (q0 to q8) | Initial: q0 | Final: q7 (Discharge), q8 (ICU)",
+                initial: "q0",
+                acceptStates: ["q7", "q8"],
+                states: [
+                    { id: "q0", label: "Check-in", x: 80, y: 240, type: "initial" },
+                    { id: "q1", label: "Triage Assessment", x: 200, y: 240, type: "normal" },
+                    { id: "q2", label: "Emergency Care", x: 380, y: 350, type: "normal" },
+                    { id: "q3", label: "Consultation", x: 380, y: 120, type: "normal" },
+                    { id: "q4", label: "Diagnostic Testing", x: 530, y: 240, type: "normal" },
+                    { id: "q5", label: "Diagnosis Review", x: 680, y: 240, type: "normal" },
+                    { id: "q6", label: "Inpatient Admission", x: 830, y: 350, type: "normal" },
+                    { id: "q7", label: "Discharge", x: 830, y: 120, type: "final", tag: "Discharge" },
+                    { id: "q8", label: "ICU Transfer", x: 830, y: 440, type: "final", tag: "ICU" }
+                ],
+                transitions: [
+                    { from: "q0", to: "q1", symbol: "check_in" },
+                    { from: "q1", to: "q3", symbol: "stable_vitals" },
+                    { from: "q1", to: "q2", symbol: "critical_vitals" },
+                    { from: "q2", to: "q4", symbol: "stabilise(tests)", curved: true, curveOffset: -30 },
+                    { from: "q2", to: "q8", symbol: "deteriorate" },
+                    { from: "q3", to: "q7", symbol: "minor_treatment" },
+                    { from: "q3", to: "q4", symbol: "order_tests" },
+                    { from: "q4", to: "q5", symbol: "results_ready", curved: true, curveOffset: -25 },
+                    { from: "q5", to: "q4", symbol: "inconclusive_retest", curved: true, curveOffset: -25 },
+                    { from: "q5", to: "q7", symbol: "clear_to_discharge" },
+                    { from: "q5", to: "q6", symbol: "requires_admission" },
+                    { from: "q6", to: "q7", symbol: "recovered_discharge" },
+                    { from: "q6", to: "q8", symbol: "critical_complication" }
+                ],
+                presets: [
+                    {
+                        name: "🟢 Successful Discharge Path",
+                        trace: ["check_in", "stable_vitals", "order_tests", "results_ready", "inconclusive_retest", "results_ready", "clear_to_discharge"]
+                    },
+                    {
+                        name: "🔴 Emergency ICU Escalation",
+                        trace: ["check_in", "critical_vitals", "deteriorate"]
+                    },
+                    {
+                        name: "🟡 Inpatient Admission -> Discharge",
+                        trace: ["check_in", "stable_vitals", "order_tests", "results_ready", "requires_admission", "recovered_discharge"]
+                    },
+                    {
+                        name: "🟢 Fast-track Minor Discharge",
+                        trace: ["check_in", "stable_vitals", "minor_treatment"]
+                    }
+                ],
+                specHtml: `
+                    <div><strong>Formal Definition:</strong> M₁ = (Q, Σ, δ, q₀, F)</div>
+                    <div><strong>States (Q):</strong> {q₀, q₁, q₂, q₃, q₄, q₅, q₆, q₇, q₈}</div>
+                    <div><strong>Alphabet (Σ):</strong> {check_in, stable_vitals, critical_vitals, minor_treatment, order_tests, stabilise(tests), deteriorate, results_ready, inconclusive_retest, clear_to_discharge, requires_admission, recovered_discharge, critical_complication}</div>
+                    <div><strong>Initial State:</strong> q₀ | <strong>Final States (F):</strong> {q₇, q₈}</div>
+                `
+            },
+            ecommerce: {
+                title: "Cross-Border E-Commerce Order Fulfillment FSM",
+                subtitle: "9 States (q0 to q8) | Initial: q0 | Final: q7 (Delivered), q8 (Cancelled)",
+                initial: "q0",
+                acceptStates: ["q7", "q8"],
+                states: [
+                    { id: "q0", label: "Checkout", x: 80, y: 240, type: "initial" },
+                    { id: "q1", label: "Inventory Audit", x: 200, y: 240, type: "normal" },
+                    { id: "q2", label: "Payment", x: 350, y: 130, type: "normal" },
+                    { id: "q3", label: "Risk Scoring", x: 480, y: 240, type: "normal" },
+                    { id: "q4", label: "Customs Clear", x: 630, y: 240, type: "normal" },
+                    { id: "q5", label: "Overseas Dispatch", x: 780, y: 130, type: "normal" },
+                    { id: "q6", label: "Retry Payment", x: 780, y: 280, type: "normal" },
+                    { id: "q7", label: "Delivered", x: 910, y: 130, type: "final", tag: "Delivered" },
+                    { id: "q8", label: "Cancelled", x: 630, y: 410, type: "final", tag: "Cancelled" }
+                ],
+                transitions: [
+                    { from: "q0", to: "q1", symbol: "submit_order" },
+                    { from: "q1", to: "q2", symbol: "stock_and_address_valid" },
+                    { from: "q1", to: "q8", symbol: "out_of_stock" },
+                    { from: "q2", to: "q3", symbol: "payment_cleared" },
+                    { from: "q2", to: "q6", symbol: "payment_declined", curved: true, curveOffset: -25 },
+                    { from: "q6", to: "q2", symbol: "retry_payment", curved: true, curveOffset: -25 },
+                    { from: "q6", to: "q8", symbol: "cancel_order" },
+                    { from: "q3", to: "q4", symbol: "fraud_check_passed" },
+                    { from: "q3", to: "q8", symbol: "fraud_flagged" },
+                    { from: "q4", to: "q5", symbol: "tariff_cleared" },
+                    { from: "q4", to: "q8", symbol: "import_restricted" },
+                    { from: "q5", to: "q7", symbol: "delivery_sucess" },
+                    { from: "q5", to: "q8", symbol: "package_lost/returned" }
+                ],
+                presets: [
+                    {
+                        name: "🟢 Successful Global Delivery",
+                        trace: ["submit_order", "stock_and_address_valid", "payment_cleared", "fraud_check_passed", "tariff_cleared", "delivery_sucess"]
+                    },
+                    {
+                        name: "🔄 Payment Decline -> Retry -> Delivery",
+                        trace: ["submit_order", "stock_and_address_valid", "payment_declined", "retry_payment", "payment_cleared", "fraud_check_passed", "tariff_cleared", "delivery_sucess"]
+                    },
+                    {
+                        name: "🔴 Customs Impound / Rejection",
+                        trace: ["submit_order", "stock_and_address_valid", "payment_cleared", "fraud_check_passed", "import_restricted"]
+                    },
+                    {
+                        name: "🔴 Fraud Security Flagged",
+                        trace: ["submit_order", "stock_and_address_valid", "payment_cleared", "fraud_flagged"]
+                    }
+                ],
+                specHtml: `
+                    <div><strong>Formal Definition:</strong> M₂ = (Q, Σ, δ, q₀, F)</div>
+                    <div><strong>States (Q):</strong> {q₀, q₁, q₂, q₃, q₄, q₅, q₆, q₇, q₈}</div>
+                    <div><strong>Alphabet (Σ):</strong> {submit_order, stock_and_address_valid, out_of_stock, payment_cleared, payment_declined, retry_payment, cancel_order, fraud_check_passed, fraud_flagged, tariff_cleared, import_restricted, delivery_sucess, package_lost/returned}</div>
+                    <div><strong>Initial State:</strong> q₀ | <strong>Final States (F):</strong> {q₇, q₈}</div>
+                `
+            }
+        };
+
+        /* Simulation Engine State Variables */
+        let currentFsmKey = 'hospital';
+        let currentStateId = 'q0';
+        let inputTrace = [];
+        let currentStepIndex = 0;
+        let isAutoPlaying = false;
+        let playInterval = null;
+        let stepHistory = [];
+
+        window.onload = function() {
+            renderFSM();
+            
+            // Speed range slider
+            const speedSlider = document.getElementById('speed-range');
+            speedSlider.addEventListener('input', (e) => {
+                document.getElementById('speed-label').innerText = (e.target.value / 1000).toFixed(1) + 's';
+                if (isAutoPlaying) {
+                    stopAutoPlay();
+                    startAutoPlay();
+                }
+            });
+        };
+
+        function switchFSM(key) {
+            currentFsmKey = key;
+            stopAutoPlay();
+            
+            // Toggle UI buttons
+            document.getElementById('btn-hospital').className = key === 'hospital' 
+                ? "px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                : "px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 text-slate-400 hover:text-white";
+                
+            document.getElementById('btn-ecommerce').className = key === 'ecommerce' 
+                ? "px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 bg-blue-600 text-white shadow-lg shadow-blue-500/20"
+                : "px-4 py-2 rounded-lg text-xs font-semibold transition-all duration-200 text-slate-400 hover:text-white";
+
+            renderFSM();
+        }
+
+        function renderFSM() {
+            const fsm = FSM_DATA[currentFsmKey];
+            document.getElementById('fsm-title').innerText = fsm.title;
+            document.getElementById('fsm-subtitle').innerText = fsm.subtitle;
+            document.getElementById('formal-spec-content').innerHTML = fsm.specHtml;
+
+            // Render Preset Buttons
+            const presetContainer = document.getElementById('preset-buttons');
+            presetContainer.innerHTML = '';
+            fsm.presets.forEach(p => {
+                const btn = document.createElement('button');
+                btn.className = "w-full text-left px-3 py-2 bg-slate-950 hover:bg-slate-800/80 border border-slate-800/80 rounded-xl text-xs font-medium text-slate-300 hover:text-white transition flex items-center justify-between";
+                btn.innerHTML = `<span>${p.name}</span> <span class="font-mono text-[10px] text-slate-500">${p.trace.length} steps</span>`;
+                btn.onclick = () => loadPreset(p.trace);
+                presetContainer.appendChild(btn);
+            });
+
+            // Draw SVG
+            const svg = document.getElementById('fsm-svg');
+            // Clear prior nodes
+            while (svg.childNodes.length > 2) {
+                svg.removeChild(svg.lastChild);
+            }
+
+            // Draw Transitions (Lines and Labels)
+            fsm.transitions.forEach((t, index) => {
+                const fromState = fsm.states.find(s => s.id === t.from);
+                const toState = fsm.states.find(s => s.id === t.to);
+
+                let pathD = '';
+                let labelX = (fromState.x + toState.x) / 2;
+                let labelY = (fromState.y + toState.y) / 2;
+
+                if (t.curved) {
+                    const dx = toState.x - fromState.x;
+                    const dy = toState.y - fromState.y;
+                    const midX = (fromState.x + toState.x) / 2;
+                    const midY = (fromState.y + toState.y) / 2;
+                    
+                    // Perpendicular offset for curved arcs
+                    const offset = t.curveOffset || -30;
+                    const cx = midX - (dy / Math.sqrt(dx*dx + dy*dy)) * offset;
+                    const cy = midY + (dx / Math.sqrt(dx*dx + dy*dy)) * offset;
+
+                    pathD = `M ${fromState.x} ${fromState.y} Q ${cx} ${cy} ${toState.x} ${toState.y}`;
+                    labelX = cx;
+                    labelY = cy;
+                } else {
+                    pathD = `M ${fromState.x} ${fromState.y} L ${toState.x} ${toState.y}`;
+                }
+
+                // Path Group
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("id", `trans-${t.from}-${t.to}-${t.symbol}`);
+
+                const path = document.createElementNS("http://www.w3.org/2000/svg", "path");
+                path.setAttribute("d", pathD);
+                path.setAttribute("fill", "none");
+                path.setAttribute("stroke", "#475569");
+                path.setAttribute("stroke-width", "2");
+                path.setAttribute("marker-end", "url(#arrow)");
+                path.setAttribute("class", "transition-line");
+
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("x", labelX);
+                text.setAttribute("y", labelY - 6);
+                text.setAttribute("fill", "#94a3b8");
+                text.setAttribute("font-size", "11");
+                text.setAttribute("font-family", "JetBrains Mono, monospace");
+                text.setAttribute("text-anchor", "middle");
+                text.textContent = t.symbol;
+
+                g.appendChild(path);
+                g.appendChild(text);
+                svg.appendChild(g);
+            });
+
+            // Draw States (Nodes)
+            fsm.states.forEach(s => {
+                const g = document.createElementNS("http://www.w3.org/2000/svg", "g");
+                g.setAttribute("id", `node-${s.id}`);
+                g.setAttribute("transform", `translate(${s.x}, ${s.y})`);
+
+                // Initial State Arrow Marker
+                if (s.type === 'initial') {
+                    const initArrow = document.createElementNS("http://www.w3.org/2000/svg", "polygon");
+                    initArrow.setAttribute("points", "-45,0 -25,-8 -25,8");
+                    initArrow.setAttribute("fill", "#3b82f6");
+                    g.appendChild(initArrow);
+                }
+
+                // Outer Ring for Final States
+                if (s.type === 'final') {
+                    const outerCircle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                    outerCircle.setAttribute("r", "22");
+                    outerCircle.setAttribute("fill", "none");
+                    outerCircle.setAttribute("stroke", "#f59e0b");
+                    outerCircle.setAttribute("stroke-width", "2");
+                    outerCircle.setAttribute("class", "state-final");
+                    g.appendChild(outerCircle);
+
+                    // Final tag label
+                    if (s.tag) {
+                        const tagText = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                        tagText.setAttribute("y", "36");
+                        tagText.setAttribute("fill", "#f59e0b");
+                        tagText.setAttribute("font-size", "10");
+                        tagText.setAttribute("font-weight", "bold");
+                        tagText.setAttribute("text-anchor", "middle");
+                        tagText.textContent = s.tag;
+                        g.appendChild(tagText);
+                    }
+                }
+
+                // Main Circle Node
+                const circle = document.createElementNS("http://www.w3.org/2000/svg", "circle");
+                circle.setAttribute("r", "18");
+                circle.setAttribute("fill", "#1e293b");
+                circle.setAttribute("stroke", "#64748b");
+                circle.setAttribute("stroke-width", "2");
+                circle.setAttribute("class", "state-circle");
+                g.appendChild(circle);
+
+                // State ID Text
+                const text = document.createElementNS("http://www.w3.org/2000/svg", "text");
+                text.setAttribute("y", "4");
+                text.setAttribute("fill", "#f8fafc");
+                text.setAttribute("font-size", "12");
+                text.setAttribute("font-family", "JetBrains Mono, monospace");
+                text.setAttribute("font-weight", "500");
+                text.setAttribute("text-anchor", "middle");
+                text.textContent = s.id;
+                g.appendChild(text);
+
+                svg.appendChild(g);
+            });
+
+            resetSimulation();
+        }
+
+        function resetSimulation() {
+            stopAutoPlay();
+            const fsm = FSM_DATA[currentFsmKey];
+            currentStateId = fsm.initial;
+            currentStepIndex = 0;
+            stepHistory = [];
+            
+            // Clear step log
+            document.getElementById('step-log-container').innerHTML = '<div class="text-slate-600 text-center py-8 italic text-xs">Ready. Load a preset or click Step Forward to begin execution.</div>';
+            document.getElementById('log-count').innerText = "0 steps";
+
+            updateUIState();
+        }
+
+        function loadPreset(trace) {
+            inputTrace = [...trace];
+            document.getElementById('custom-trace-input').value = trace.join(', ');
+            resetSimulation();
+        }
+
+        function loadCustomTrace() {
+            const val = document.getElementById('custom-trace-input').value.trim();
+            if (!val) return;
+            inputTrace = val.split(',').map(s => s.trim()).filter(s => s.length > 0);
+            resetSimulation();
+        }
+
+        function stepForward() {
+            const fsm = FSM_DATA[currentFsmKey];
+            
+            if (currentStepIndex >= inputTrace.length) {
+                return; // Trace finished
+            }
+
+            const symbol = inputTrace[currentStepIndex];
+            
+            // Find valid transition from current state
+            const transition = fsm.transitions.find(t => t.from === currentStateId && t.symbol === symbol);
+
+            if (transition) {
+                const prevNode = currentStateId;
+                currentStateId = transition.to;
+                currentStepIndex++;
+
+                stepHistory.push({
+                    step: currentStepIndex,
+                    from: prevNode,
+                    to: currentStateId,
+                    symbol: symbol,
+                    success: true
+                });
+
+                highlightTransition(transition);
+            } else {
+                // Invalid transition step
+                stepHistory.push({
+                    step: currentStepIndex + 1,
+                    from: currentStateId,
+                    to: currentStateId,
+                    symbol: symbol,
+                    success: false
+                });
+                currentStepIndex = inputTrace.length; // Stop execution
+                stopAutoPlay();
+            }
+
+            updateUIState();
+        }
+
+        function manualTrigger(symbol) {
+            inputTrace = inputTrace.slice(0, currentStepIndex);
+            inputTrace.push(symbol);
+            document.getElementById('custom-trace-input').value = inputTrace.join(', ');
+            stepForward();
+        }
+
+        function highlightTransition(t) {
+            const elementId = `trans-${t.from}-${t.to}-${t.symbol}`;
+            const g = document.getElementById(elementId);
+            if (g) {
+                const path = g.querySelector('path');
+                const text = g.querySelector('text');
+                path.classList.add('transition-active');
+                path.setAttribute('marker-end', 'url(#arrow-active)');
+                text.classList.add('transition-label-active');
+
+                setTimeout(() => {
+                    path.classList.remove('transition-active');
+                    path.setAttribute('marker-end', 'url(#arrow)');
+                    text.classList.remove('transition-label-active');
+                }, 600);
+            }
+        }
+
+        function updateUIState() {
+            const fsm = FSM_DATA[currentFsmKey];
+            const currentStateObj = fsm.states.find(s => s.id === currentStateId);
+
+            // Highlight Active Circle Node
+            fsm.states.forEach(s => {
+                const node = document.getElementById(`node-${s.id}`);
+                if (node) {
+                    const circle = node.querySelector('.state-circle');
+                    if (s.id === currentStateId) {
+                        circle.classList.add('state-active');
+                    } else {
+                        circle.classList.remove('state-active');
+                    }
+                }
+            });
+
+            // Update Current State Info Panel
+            document.getElementById('current-state-id').innerText = currentStateId;
+            document.getElementById('current-state-label').innerText = `${currentStateId}: ${currentStateObj ? currentStateObj.label : ''}`;
+
+            const isAccepting = fsm.acceptStates.includes(currentStateId);
+            document.getElementById('is-terminal-text').innerText = isAccepting ? `Yes (${currentStateObj.tag || 'Final'})` : "No";
+            document.getElementById('is-terminal-text').className = isAccepting ? "font-semibold text-emerald-400" : "font-semibold text-slate-500";
+
+            // Update Verdict Badge
+            const badge = document.getElementById('verdict-badge');
+            if (currentStepIndex === 0 && stepHistory.length === 0) {
+                badge.innerText = "READY";
+                badge.className = "px-3 py-1 rounded-full text-xs font-mono font-semibold bg-slate-800 text-slate-400 border border-slate-700";
+            } else if (isAccepting && currentStepIndex === inputTrace.length) {
+                badge.innerText = "ACCEPTED (FINAL STATE)";
+                badge.className = "px-3 py-1 rounded-full text-xs font-mono font-semibold bg-emerald-500/20 text-emerald-400 border border-emerald-500/40 shadow-lg shadow-emerald-500/10";
+            } else if (stepHistory.length > 0 && !stepHistory[stepHistory.length - 1].success) {
+                badge.innerText = "REJECTED (INVALID TRANSITION)";
+                badge.className = "px-3 py-1 rounded-full text-xs font-mono font-semibold bg-rose-500/20 text-rose-400 border border-rose-500/40";
+            } else {
+                badge.innerText = `RUNNING (${currentStepIndex}/${inputTrace.length})`;
+                badge.className = "px-3 py-1 rounded-full text-xs font-mono font-semibold bg-blue-500/20 text-blue-400 border border-blue-500/40";
+            }
+
+            // Render Available Trigger Action Buttons for Current State
+            const triggerContainer = document.getElementById('action-triggers');
+            triggerContainer.innerHTML = '';
+            const validTransitions = fsm.transitions.filter(t => t.from === currentStateId);
+
+            if (validTransitions.length === 0) {
+                triggerContainer.innerHTML = '<span class="text-xs text-slate-500 italic">No outgoing transitions (Terminal state reached)</span>';
+            } else {
+                validTransitions.forEach(t => {
+                    const btn = document.createElement('button');
+                    btn.className = "px-3 py-1.5 bg-blue-900/40 hover:bg-blue-600 border border-blue-500/30 hover:border-blue-400 text-blue-200 hover:text-white rounded-lg text-xs font-mono transition flex items-center gap-1.5";
+                    btn.innerHTML = `<span>${t.symbol}</span> <span class="text-[10px] opacity-60">➔ ${t.to}</span>`;
+                    btn.onclick = () => manualTrigger(t.symbol);
+                    triggerContainer.appendChild(btn);
+                });
+            }
+
+            // Render Step History Logs
+            renderStepLogs();
+        }
+
+        function renderStepLogs() {
+            const container = document.getElementById('step-log-container');
+            document.getElementById('log-count').innerText = `${stepHistory.length} steps`;
+
+            if (stepHistory.length === 0) return;
+
+            container.innerHTML = '';
+            stepHistory.forEach(h => {
+                const item = document.createElement('div');
+                if (h.success) {
+                    item.className = "p-2 bg-slate-950 border border-slate-800 rounded-lg flex items-center justify-between text-slate-300";
+                    item.innerHTML = `
+                        <div class="flex items-center space-x-2">
+                            <span class="text-slate-500 text-[10px]">#${h.step}</span>
+                            <span class="text-blue-400 font-bold">${h.from}</span>
+                            <span class="text-slate-500">➔</span>
+                            <span class="text-emerald-400 font-bold">${h.to}</span>
+                        </div>
+                        <span class="text-[11px] text-slate-400 bg-slate-900 px-2 py-0.5 rounded border border-slate-800">${h.symbol}</span>
+                    `;
+                } else {
+                    item.className = "p-2 bg-rose-950/40 border border-rose-800/50 rounded-lg flex items-center justify-between text-rose-300";
+                    item.innerHTML = `
+                        <div class="flex items-center space-x-2">
+                            <span class="text-rose-400 text-[10px]">#${h.step}</span>
+                            <span>Invalid symbol from <strong class="text-white">${h.from}</strong></span>
+                        </div>
+                        <span class="text-[11px] font-bold text-rose-400">${h.symbol}</span>
+                    `;
+                }
+                container.appendChild(item);
+            });
+
+            // Auto-scroll to bottom of log
+            container.scrollTop = container.scrollHeight;
+        }
+
+        function toggleAutoPlay() {
+            if (isAutoPlaying) {
+                stopAutoPlay();
+            } else {
+                startAutoPlay();
+            }
+        }
+
+        function startAutoPlay() {
+            if (currentStepIndex >= inputTrace.length) {
+                resetSimulation();
+            }
+            isAutoPlaying = true;
+            document.getElementById('play-text').innerText = "Pause";
+            document.getElementById('play-icon').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M10 9v6m4-6v6m7-3a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+
+            const speed = parseInt(document.getElementById('speed-range').value);
+            playInterval = setInterval(() => {
+                if (currentStepIndex < inputTrace.length) {
+                    stepForward();
+                } else {
+                    stopAutoPlay();
+                }
+            }, speed);
+        }
+
+        function stopAutoPlay() {
+            isAutoPlaying = false;
+            if (playInterval) clearInterval(playInterval);
+            document.getElementById('play-text').innerText = "Auto Play";
+            document.getElementById('play-icon').innerHTML = '<path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z"></path><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path>';
+        }
+    </script>
+</body>
+</html>
